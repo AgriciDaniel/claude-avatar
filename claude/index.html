@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Claude Avatar</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no">
+  <link rel="icon" href="../favicon.jpg">
+  <style>
+    :root {
+      --bg: #0a0a14;
+      --panel: #0f0f1e;
+      --panel2: #12122a;
+      --border: rgba(136,204,255,0.12);
+      --accent: #88ccff;
+      --accent2: #cc77ff;
+      --green: #4ade80;
+      --yellow: #facc15;
+      --red: #f87171;
+      --text: #d4d4d8;
+      --dim: rgba(255,255,255,0.3);
+      --tool-color: #facc15;
+      --result-color: #4ade80;
+      --system-color: #a78bfa;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      background: var(--bg); color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    }
+
+    /* ── Grid: top-left avatar, top-right chat, bottom CLI ── */
+    #app {
+      display: grid; width: 100%; height: 100%;
+      grid-template-columns: 420px 1fr;
+      grid-template-rows: 1fr 280px;
+      grid-template-areas: "avatar chat" "cli cli";
+    }
+
+    /* ── Avatar area (top-left) ── */
+    #avatar-area {
+      grid-area: avatar; position: relative; overflow: hidden;
+      border-right: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    #avatar-container { width: 100%; height: 100%; }
+
+    #avatar-status {
+      position: absolute; top: 10px; left: 10px; z-index: 10;
+      background: rgba(10,10,20,0.85); padding: 4px 10px; border-radius: 6px;
+      font-size: 11px; color: var(--dim); display: flex; align-items: center; gap: 5px;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+    .dot-green { background: var(--green); }
+    .dot-red { background: var(--red); }
+    .dot-yellow { background: var(--yellow); animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    #subtitle-bar {
+      position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+      max-width: 90%; text-align: center; font-size: 14px; color: #fff;
+      background: rgba(0,0,0,0.7); padding: 5px 14px; border-radius: 8px;
+      pointer-events: none; z-index: 10; display: none;
+      text-shadow: 1px 1px 2px rgba(0,0,0,0.9);
+    }
+    #subtitle-bar.visible { display: block; }
+
+    /* ── Chat area (top-right) ── */
+    #chat-area {
+      grid-area: chat; display: flex; flex-direction: column;
+      background: var(--panel); border-bottom: 1px solid var(--border);
+    }
+    #chat-header {
+      padding: 10px 16px; font-size: 12px; font-weight: 600;
+      color: var(--accent); border-bottom: 1px solid var(--border);
+      text-transform: uppercase; letter-spacing: 0.5px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    #chat-messages {
+      flex: 1; overflow-y: auto; padding: 12px 16px;
+      scrollbar-width: thin; scrollbar-color: rgba(136,204,255,0.15) transparent;
+    }
+    .chat-bubble {
+      max-width: 85%; padding: 8px 14px; border-radius: 12px;
+      margin-bottom: 8px; font-size: 14px; line-height: 1.5;
+      word-break: break-word;
+    }
+    .chat-user {
+      background: rgba(136,204,255,0.12); border: 1px solid rgba(136,204,255,0.2);
+      margin-left: auto; color: var(--accent); text-align: right;
+      border-bottom-right-radius: 4px;
+    }
+    .chat-claude {
+      background: rgba(204,119,255,0.08); border: 1px solid rgba(204,119,255,0.15);
+      color: var(--text); border-bottom-left-radius: 4px;
+    }
+    .chat-claude.replayable { cursor: pointer; }
+    .chat-claude.replayable:hover { background: rgba(204,119,255,0.15); }
+    .chat-claude .replay-hint {
+      font-size: 10px; color: var(--dim); margin-top: 4px;
+      opacity: 0; transition: opacity 0.15s;
+    }
+    .chat-claude.replayable:hover .replay-hint { opacity: 1; }
+    .chat-streaming {
+      background: rgba(250,204,21,0.06); border: 1px solid rgba(250,204,21,0.15);
+      color: var(--text); border-bottom-left-radius: 4px;
+      animation: stream-glow 1.5s infinite;
+    }
+    @keyframes stream-glow {
+      0%,100% { border-color: rgba(250,204,21,0.15); }
+      50% { border-color: rgba(250,204,21,0.35); }
+    }
+    .chat-label {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+      margin-bottom: 2px; font-weight: 600;
+    }
+    .chat-user .chat-label { color: rgba(136,204,255,0.5); }
+    .chat-claude .chat-label, .chat-streaming .chat-label { color: rgba(204,119,255,0.5); }
+
+    #input-bar {
+      display: flex; gap: 8px; padding: 10px 12px;
+      border-top: 1px solid var(--border);
+    }
+    #text-input {
+      flex: 1; background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+      border-radius: 8px; padding: 10px 14px; color: var(--text); font-size: 14px;
+      outline: none; font-family: inherit;
+    }
+    #text-input:focus { border-color: var(--accent); }
+    #text-input::placeholder { color: var(--dim); }
+    button {
+      background: rgba(136,204,255,0.1); border: 1px solid rgba(136,204,255,0.25);
+      border-radius: 8px; color: var(--accent); padding: 10px 16px; cursor: pointer;
+      font-size: 14px; font-family: inherit; transition: all 0.15s; white-space: nowrap;
+    }
+    button:hover { background: rgba(136,204,255,0.2); }
+    button:active { transform: scale(0.97); }
+    button:disabled { opacity: 0.3; cursor: not-allowed; }
+    #mic-btn {
+      min-width: 44px; display: flex; align-items: center; justify-content: center;
+      font-size: 18px; padding: 10px 12px;
+    }
+    #mic-btn.recording {
+      background: rgba(248,113,113,0.25); border-color: var(--red); color: var(--red);
+      animation: mic-pulse 1.2s infinite;
+    }
+    @keyframes mic-pulse { 0%,100%{box-shadow:0 0 0 0 rgba(248,113,113,0.3)} 50%{box-shadow:0 0 0 6px rgba(248,113,113,0)} }
+
+    /* ── CLI terminal (bottom, full width) ── */
+    #cli-area {
+      grid-area: cli; display: flex; flex-direction: column;
+      background: var(--panel2);
+    }
+    #cli-header {
+      padding: 6px 14px; font-size: 11px; font-weight: 600;
+      color: var(--green); border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 6px;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      background: rgba(74,222,128,0.04);
+    }
+    #cli-header .cli-dots {
+      display: flex; gap: 4px; margin-right: 6px;
+    }
+    #cli-header .cli-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+    }
+    #console-log {
+      flex: 1; overflow-y: auto; padding: 6px 14px; font-size: 12px;
+      font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Courier New', monospace;
+      line-height: 1.5;
+      scrollbar-width: thin; scrollbar-color: rgba(74,222,128,0.15) transparent;
+    }
+    .log-entry { padding: 1px 0; word-break: break-word; }
+    .log-time { color: rgba(255,255,255,0.15); margin-right: 6px; font-size: 10px; }
+    .log-user { color: var(--accent); }
+    .log-claude { color: var(--text); }
+    .log-tool { color: var(--tool-color); }
+    .log-tool-result { color: var(--result-color); opacity: 0.6; font-size: 11px; }
+    .log-system { color: var(--system-color); }
+    .log-error { color: var(--red); }
+    .log-status { color: var(--dim); font-style: italic; font-size: 11px; }
+
+    /* ── Loading overlay ── */
+    #loading-overlay {
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      background: var(--bg); z-index: 30; gap: 20px;
+    }
+    #loading-overlay.hidden { display: none; }
+    #loading-overlay h1 { font-size: 28px; font-weight: 300; color: var(--accent); letter-spacing: 2px; }
+    #start-btn {
+      font-size: 18px; padding: 14px 40px;
+      background: rgba(136,204,255,0.12); border: 2px solid var(--accent);
+      border-radius: 14px; color: var(--accent); cursor: pointer;
+    }
+    #start-btn:hover { background: rgba(136,204,255,0.25); }
+    #loading-hint { font-size: 12px; color: var(--dim); text-align: center; line-height: 1.6; }
+  </style>
+
+  <script type="importmap">
+  { "imports": {
+      "three": "../node_modules/three/build/three.module.js",
+      "three/addons/": "../node_modules/three/examples/jsm/",
+      "talkinghead": "../modules/talkinghead.mjs"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import { TalkingHead } from "talkinghead";
+
+    let head, ws, requestId = 0, currentResponse = '';
+    let mediaRecorder = null, audioChunks = [], isRecording = false;
+    let streamBubble = null;
+    const ttsCache = new Map();
+
+    const avatarEl = document.getElementById('avatar-container');
+    const textInput = document.getElementById('text-input');
+    const sendBtn = document.getElementById('send-btn');
+    const micBtn = document.getElementById('mic-btn');
+    const statusEl = document.getElementById('avatar-status');
+    const loadingEl = document.getElementById('loading-overlay');
+    const subtitleEl = document.getElementById('subtitle-bar');
+    const consoleLog = document.getElementById('console-log');
+    const chatMessages = document.getElementById('chat-messages');
+    const startBtn = document.getElementById('start-btn');
+
+    // ── CLI log ──
+    function log(text, cls) {
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      const timeSpan = document.createElement('span');
+      timeSpan.className = 'log-time';
+      timeSpan.textContent = new Date().toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+      const msgSpan = document.createElement('span');
+      msgSpan.className = cls || 'log-status';
+      msgSpan.textContent = text;
+      entry.appendChild(timeSpan);
+      entry.appendChild(msgSpan);
+      consoleLog.appendChild(entry);
+      consoleLog.scrollTop = consoleLog.scrollHeight;
+    }
+
+    // ── Chat bubbles ──
+    function addChatBubble(text, type, replayId) {
+      const bubble = document.createElement('div');
+      bubble.className = 'chat-bubble chat-' + type;
+      const label = document.createElement('div');
+      label.className = 'chat-label';
+      label.textContent = type === 'user' ? 'You' : 'Claude';
+      const content = document.createElement('div');
+      content.textContent = text;
+      bubble.appendChild(label);
+      bubble.appendChild(content);
+
+      if (replayId) {
+        bubble.classList.add('replayable');
+        const hint = document.createElement('div');
+        hint.className = 'replay-hint';
+        hint.textContent = '\u25B6 click to replay';
+        bubble.appendChild(hint);
+        bubble.addEventListener('click', () => {
+          const cached = ttsCache.get(replayId);
+          if (cached) speakWithAvatar(cached.text, cached.tts);
+        });
+      }
+
+      chatMessages.appendChild(bubble);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+      return bubble;
+    }
+
+    function startStreamBubble() {
+      streamBubble = document.createElement('div');
+      streamBubble.className = 'chat-bubble chat-streaming';
+      const label = document.createElement('div');
+      label.className = 'chat-label';
+      label.textContent = 'Claude';
+      const content = document.createElement('div');
+      content.className = 'stream-content';
+      content.textContent = '';
+      streamBubble.appendChild(label);
+      streamBubble.appendChild(content);
+      chatMessages.appendChild(streamBubble);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function updateStreamBubble(text) {
+      if (!streamBubble) startStreamBubble();
+      const content = streamBubble.querySelector('.stream-content');
+      content.textContent = text;
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function finalizeStreamBubble(text, replayId) {
+      if (streamBubble) streamBubble.remove();
+      streamBubble = null;
+      return addChatBubble(text, 'claude', replayId);
+    }
+
+    function setStatus(text, state) {
+      statusEl.textContent = '';
+      const dot = document.createElement('span');
+      dot.className = 'dot dot-' + (state || 'green');
+      statusEl.appendChild(dot);
+      statusEl.appendChild(document.createTextNode(text));
+    }
+
+    function showSubtitle(text) { subtitleEl.textContent = text; subtitleEl.classList.add('visible'); }
+    function hideSubtitle() { subtitleEl.classList.remove('visible'); }
+
+    // ── WebSocket ──
+    function connectBridge() {
+      log('Connecting to bridge...', 'log-system');
+      ws = new WebSocket('ws://localhost:3001');
+
+      ws.onopen = () => {
+        setStatus('Connected', 'green');
+        log('Bridge connected', 'log-system');
+        sendBtn.disabled = false;
+        micBtn.disabled = false;
+        textInput.focus();
+      };
+      ws.onclose = () => {
+        setStatus('Disconnected', 'red');
+        sendBtn.disabled = true;
+        micBtn.disabled = true;
+        log('Disconnected \u2014 reconnecting...', 'log-error');
+        setTimeout(connectBridge, 3000);
+      };
+      ws.onerror = () => setStatus('Connection failed', 'red');
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        switch (data.type) {
+          case 'stream':
+            currentResponse += data.content;
+            updateStreamBubble(currentResponse);
+            showSubtitle(currentResponse.slice(-120));
+            break;
+
+          case 'tool':
+            log('\u25B6 ' + data.tool + (data.detail ? ' \u2014 ' + data.detail : ''), 'log-tool');
+            setStatus('Running ' + data.tool + '...', 'yellow');
+            break;
+
+          case 'tool_result':
+            if (data.content) {
+              data.content.split('\n').forEach(line => {
+                if (line.trim()) log('  ' + line, 'log-tool-result');
+              });
+              if (data.lines > 3) log('  ... (' + data.lines + ' lines)', 'log-status');
+            }
+            break;
+
+          case 'model':
+            log('Model: ' + data.model, 'log-status');
+            break;
+
+          case 'usage':
+            log('Tokens: ' + data.tokens + (data.duration ? ' | ' + (data.duration/1000).toFixed(1) + 's' : '') + (data.cost ? ' | $' + data.cost.toFixed(4) : ''), 'log-status');
+            break;
+
+          case 'system':
+            if (data.content) log(data.content, 'log-system');
+            break;
+
+          case 'transcribing':
+            setStatus('Transcribing...', 'yellow');
+            log('Transcribing (faster-whisper GPU)...', 'log-system');
+            break;
+
+          case 'transcript':
+            if (data.text) {
+              addChatBubble(data.text, 'user');
+              log('You (voice): ' + data.text, 'log-user');
+              setStatus('Thinking...', 'yellow');
+            } else {
+              log('No speech detected', 'log-status');
+              setStatus('Connected', 'green');
+            }
+            break;
+
+          case 'generating_voice':
+            setStatus('Generating voice...', 'yellow');
+            log('Generating voice (edge-tts)...', 'log-system');
+            break;
+
+          case 'result': {
+            const text = data.content || currentResponse;
+            currentResponse = '';
+            hideSubtitle();
+            setStatus('Connected', 'green');
+
+            const msgId = 'msg-' + Date.now();
+            if (data.tts) ttsCache.set(msgId, { text, tts: data.tts });
+
+            finalizeStreamBubble(text, data.tts ? msgId : null);
+            log('Claude: ' + text.slice(0, 120) + (text.length > 120 ? '...' : ''), 'log-claude');
+            speakWithAvatar(text, data.tts);
+            break;
+          }
+
+          case 'error':
+            currentResponse = '';
+            hideSubtitle();
+            if (streamBubble) { streamBubble.remove(); streamBubble = null; }
+            setStatus('Connected', 'green');
+            log('Error: ' + data.message, 'log-error');
+            break;
+        }
+      };
+    }
+
+    // ── Send ──
+    function sendMessage(text) {
+      if (!text.trim() || !ws || ws.readyState !== WebSocket.OPEN) return;
+      const id = ++requestId;
+      addChatBubble(text, 'user');
+      log('You: ' + text, 'log-user');
+      textInput.value = '';
+      currentResponse = '';
+      setStatus('Thinking...', 'yellow');
+      if (head) { try { head.setMood('thinking'); } catch(e) {} }
+      ws.send(JSON.stringify({ id, type: 'chat', text }));
+    }
+
+    // ── Mic ──
+    async function toggleRecording() {
+      if (isRecording) {
+        isRecording = false;
+        micBtn.classList.remove('recording');
+        micBtn.textContent = '\uD83C\uDFA4';
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, sampleRate: 16000 }
+        });
+        audioChunks = [];
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+        mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+        mediaRecorder.onstop = async () => {
+          stream.getTracks().forEach(t => t.stop());
+          if (!audioChunks.length) return;
+          const blob = new Blob(audioChunks, { type: 'audio/webm' });
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const base64 = reader.result.split(',')[1];
+            const id = ++requestId;
+            currentResponse = '';
+            setStatus('Sending audio...', 'yellow');
+            log('Recording sent', 'log-status');
+            if (head) { try { head.setMood('thinking'); } catch(e) {} }
+            ws.send(JSON.stringify({ id, type: 'transcribe', audio: base64 }));
+          };
+          reader.readAsDataURL(blob);
+        };
+        mediaRecorder.start();
+        isRecording = true;
+        micBtn.classList.add('recording');
+        micBtn.textContent = '\u23F9';
+        log('Recording...', 'log-status');
+      } catch (err) {
+        log('Mic error: ' + err.message, 'log-error');
+      }
+    }
+
+    // ── Avatar speech ──
+    async function speakWithAvatar(text, tts) {
+      if (!head) return;
+      if (tts && tts.audio) {
+        try {
+          const binaryStr = atob(tts.audio);
+          const bytes = new Uint8Array(binaryStr.length);
+          for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+          const decodedAudio = await head.audioCtx.decodeAudioData(bytes.buffer.slice(0));
+          head.speakAudio({
+            audio: decodedAudio, words: tts.words, wtimes: tts.wtimes, wdurations: tts.wdurations
+          }, { lipsyncLang: 'en', avatarMood: 'neutral' }, (sub) => showSubtitle(sub));
+        } catch(e) { fallbackSpeak(text); }
+      } else { fallbackSpeak(text); }
+    }
+    function fallbackSpeak(text) {
+      try { head.speakText(text, { lipsyncLang: 'en', avatarMood: 'neutral' }); } catch(e) {}
+      speechSynthesis.cancel();
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.lang = 'en-US';
+      const voices = speechSynthesis.getVoices();
+      const p = voices.find(v => v.lang.startsWith('en-') && !v.name.includes('espeak'));
+      if (p) utt.voice = p;
+      utt.onend = () => { hideSubtitle(); try { head.setMood('neutral'); } catch(e) {} };
+      speechSynthesis.speak(utt);
+    }
+
+    // ── Events ──
+    sendBtn.addEventListener('click', () => sendMessage(textInput.value));
+    textInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(textInput.value); }
+    });
+    micBtn.addEventListener('click', toggleRecording);
+
+    // ── Start ──
+    startBtn.addEventListener('click', async () => {
+      startBtn.disabled = true;
+      startBtn.textContent = 'Loading avatar...';
+      speechSynthesis.getVoices();
+      speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
+      try {
+        head = new TalkingHead(avatarEl, { ttsEndpoint: null, lipsyncModules: ["en"], cameraView: "upper" });
+        await head.showAvatar({
+          url: '../avatars/brunette.glb', body: 'F', avatarMood: 'neutral', lipsyncLang: 'en'
+        }, (ev) => {
+          if (ev.lengthComputable) startBtn.textContent = 'Loading ' + Math.round(ev.loaded / ev.total * 100) + '%';
+        });
+        loadingEl.classList.add('hidden');
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') head.start(); else head.stop();
+        });
+      } catch (err) {
+        startBtn.textContent = 'Error: ' + err.message;
+        return;
+      }
+      connectBridge();
+    });
+  </script>
+</head>
+
+<body>
+  <div id="loading-overlay">
+    <h1>CLAUDE AVATAR</h1>
+    <button id="start-btn">Click to Start</button>
+    <div id="loading-hint">Click mic to talk, or type a message</div>
+  </div>
+
+  <div id="app">
+    <!-- Top-left: Avatar -->
+    <div id="avatar-area">
+      <div id="avatar-container"></div>
+      <div id="avatar-status"><span class="dot dot-red"></span>Not started</div>
+      <div id="subtitle-bar"></div>
+    </div>
+
+    <!-- Top-right: Chat -->
+    <div id="chat-area">
+      <div id="chat-header">
+        <span style="font-size:14px">\u{1F4AC}</span> Conversation
+      </div>
+      <div id="chat-messages"></div>
+      <div id="input-bar">
+        <input id="text-input" type="text" placeholder="Type a message..." autocomplete="off">
+        <button id="mic-btn" disabled title="Record voice">&#127908;</button>
+        <button id="send-btn" disabled>Send</button>
+      </div>
+    </div>
+
+    <!-- Bottom: CLI Terminal -->
+    <div id="cli-area">
+      <div id="cli-header">
+        <div class="cli-dots">
+          <span class="cli-dot" style="background:var(--red)"></span>
+          <span class="cli-dot" style="background:var(--yellow)"></span>
+          <span class="cli-dot" style="background:var(--green)"></span>
+        </div>
+        Claude Code CLI
+      </div>
+      <div id="console-log"></div>
+    </div>
+  </div>
+</body>
+</html>
